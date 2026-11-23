@@ -10,8 +10,11 @@ const tabs=['Mi parcela','Asistente','Alertas','Laboratorio','Mercado'];
 let s,page='Monitor',day=0,adminKey='',adm,filter='Todas',timer;
 const dlabel=(date,len='short')=>new Date(date+'T12:00:00').toLocaleDateString('es-BO',{weekday:len,day:'numeric'});
 function notify(msg){$('#toast').textContent=msg;clearTimeout(timer);timer=setTimeout(()=>$('#toast').textContent='',4500)}
+function teamHeaders(){
+ return adminKey ? {'X-Yapu-Admin-UTF8':encodeURIComponent(adminKey)} : {};
+}
 async function api(path,data){
- const r=await fetch('/api/'+path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-Yapu-Admin':adminKey},body:data?JSON.stringify(data):undefined});
+ const r=await fetch('/api/'+path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json',...teamHeaders()},body:data?JSON.stringify(data):undefined});
  const j=await r.json();if(!r.ok)throw Error(j.error||'No se completó la operación');return j;
 }
 async function refresh(){s=await api('state');render()}

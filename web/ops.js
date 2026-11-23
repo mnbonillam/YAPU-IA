@@ -26,7 +26,7 @@ async function listenBoard(m){
  while(m===monitor){
   try{
    m.listening=true;
-   const response=await fetch('/api/ops/wait?seen='+(m.data?.version??-1),{headers:{'X-Yapu-Admin':adminKey},signal:m.abort.signal});
+   const response=await fetch('/api/ops/wait?seen='+(m.data?.version??-1),{headers:teamHeaders(),signal:m.abort.signal});
    if(!response.ok)throw Error('Conexión interrumpida');
    await response.json();if(m!==monitor)return;await syncBoard(m);
   }catch(e){

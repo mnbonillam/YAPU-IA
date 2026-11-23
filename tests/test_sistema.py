@@ -6,6 +6,8 @@ import os
 import tempfile
 import threading
 import unittest
+from contextlib import closing
+from urllib.parse import quote
 from pathlib import Path
 from unittest.mock import patch
 import agro,app,canal,core
@@ -59,6 +61,29 @@ class Flujo(unittest.TestCase):
         self.assertEqual(self.call('feedback',args)[0],200)
         self.assertEqual(self.state()['alerts'][0]['useful'],1)
         self.cookie='';self.assertEqual(self.call('feedback',args)[0],400)
+    def test_unicode_team_access(self):
+        def status(path, headers):
+            with closing(http.client.HTTPConnection(*self.srv.server_address, timeout=5)) as conn:
+                conn.request('GET', path, headers=headers)
+                response = conn.getresponse()
+                response.read()
+                return response.status
+
+        password = 'Peña %20 🌱'
+        with patch.object(app, 'ADMIN', password):
+            headers = {'X-Yapu-Admin-UTF8': quote(password, safe='')}
+            self.assertEqual(status('/api/admin', headers), 200)
+            for path in ('/api/admin', '/api/ops', '/api/ops/wait?seen=-1'):
+                self.assertEqual(status(path, {'X-Yapu-Admin-UTF8': 'equivocada'}), 403)
+            self.assertEqual(status('/api/admin', {}), 403)
+        with patch.object(app, 'ADMIN', 'Peña'):
+            self.assertEqual(status('/api/admin', {'X-Yapu-Admin': 'Peña'}), 200)
+        with patch.dict(os.environ, {'WA_VERIFY_TOKEN': password}):
+            url = '/webhook?hub.mode=subscribe&hub.challenge=ok&hub.verify_token='
+            self.assertEqual(status(url + quote(password), {}), 200)
+            self.assertEqual(status(url + quote('falló'), {}), 403)
+        self.assertFalse(canal.valid_signature(b'body', 'inválida'))
+
     def test_admin_access_and_edit(self):
         self.assertEqual(self.call('admin')[0],403)
         d=dict(title='Ficha de prueba',tags='panojas',crop='Quinua',body='Registrar observaciones.',source='Equipo')

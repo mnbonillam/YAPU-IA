@@ -6,7 +6,7 @@ import mimetypes
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
-from urllib.parse import urlsplit,parse_qs
+from urllib.parse import urlsplit,parse_qs,unquote_to_bytes
 from core import *
 from canal import operator_reply
 import operaciones as ops
@@ -32,8 +32,19 @@ class Handler(BaseHTTPRequestHandler):
         with db() as c:
             if val and c.execute("SELECT 1 FROM users WHERE id=? AND phone IS NULL",(val.value,)).fetchone(): return val.value
             self.new_cookie=create_user(c); return self.new_cookie
+    def team_requested(self):
+        return bool(self.headers.get('X-Yapu-Admin-UTF8') or self.headers.get('X-Yapu-Admin'))
+
     def admin(self):
-        if not secrets.compare_digest(self.headers.get('X-Yapu-Admin',''),ADMIN): raise PermissionError('La clave de administración es incorrecta.')
+        encoded = self.headers.get('X-Yapu-Admin-UTF8')
+        if encoded is None:
+            supplied = self.headers.get('X-Yapu-Admin', '').encode('utf-8')
+        elif encoded.isascii():
+            supplied = unquote_to_bytes(encoded)
+        else:
+            supplied = b''
+        if not supplied or not secrets.compare_digest(supplied, ADMIN.encode('utf-8')):
+            raise PermissionError('La clave de administración es incorrecta.')
     def do_GET(self):
         path=urlsplit(self.path).path
         try:
@@ -61,7 +72,7 @@ class Handler(BaseHTTPRequestHandler):
                 try: return self.out(forecast('Viacha','live','Estable',force='refresh=1' in self.path))
                 except Exception: return self.out({'error':'Sin clima vigente de Viacha.'},503)
             if path in ('/api/ops','/api/ops/wait'):
-                team=bool(self.headers.get('X-Yapu-Admin'))
+                team=self.team_requested()
                 if team: self.admin()
                 uid=self.identity()
                 if path.endswith('/wait'):
@@ -79,7 +90,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.out(dict(users=users,stats=stats,docs=rows(c,'SELECT * FROM knowledge ORDER BY id'),cases=rows(c,'SELECT cases.id,users.name,question,status FROM cases JOIN users ON users.id=cases.user ORDER BY cases.id DESC')))
             if path=='/webhook':
                 q=parse_qs(urlsplit(self.path).query); token=os.getenv('WA_VERIFY_TOKEN','')
-                if token and q.get('hub.mode')==['subscribe'] and secrets.compare_digest(q.get('hub.verify_token',[''])[0],token):
+                if token and q.get('hub.mode')==['subscribe'] and secrets.compare_digest(q.get('hub.verify_token',[''])[0].encode(),token.encode()):
                     return self.out(q.get('hub.challenge',[''])[0].encode(),mime='text/plain')
                 raise PermissionError('Verificación denegada')
             filename={'/':'atlas.html','/cuaderno':'index.html','/whatsapp':'whatsapp.html','/app.js':'app.js','/style.css':'style.css','/campo.webp':'campo.webp','/marca.png':'marca.png'}.get(path)
@@ -168,7 +179,7 @@ class Handler(BaseHTTPRequestHandler):
                 ops.publish(uid)
                 return self.out(result)
             if self.path.startswith('/api/ops/'): 
-                team=bool(self.headers.get('X-Yapu-Admin'))
+                team=self.team_requested()
                 if team: self.admin()
                 action=self.path.rsplit('/',1)[1]
                 with db() as c:

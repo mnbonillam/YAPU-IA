@@ -14,7 +14,7 @@ gate=threading.Lock()
 schedule_wake=threading.Event()
 def valid_signature(data,signature):
     key=os.getenv('WA_APP_SECRET','')
-    return bool(key) and hmac.compare_digest(signature,'sha256='+hmac.new(key.encode(),data,hashlib.sha256).hexdigest())
+    return bool(key) and signature.isascii() and hmac.compare_digest(signature,'sha256='+hmac.new(key.encode(),data,hashlib.sha256).hexdigest())
 def graph():
     return 'https://graph.facebook.com/'+os.environ['WA_GRAPH_VERSION']+'/'
 def bearer(): return {'Authorization':'Bearer '+os.environ['WA_TOKEN']}
