@@ -1,5 +1,6 @@
 import argparse
 import http.cookies
+import urllib.error
 import logging
 import mimetypes
 import threading
@@ -89,14 +90,55 @@ class Handler(BaseHTTPRequestHandler):
         except PermissionError as e: self.out({'error':str(e)},403)
         except ValueError as e: self.out({'error':str(e)},400)
         except Exception: logging.exception('Error de lectura'); self.out({'error':'No se pudo abrir la vista.'},500)
+    def receive_whatsapp(self):
+        stage = 'longitud'
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            if not 0 < length <= 1000000:
+                logging.warning('WhatsApp 400: longitud ausente o fuera de rango; fragmentado=%s',
+                                self.headers.get('Transfer-Encoding', '').lower() == 'chunked')
+                return self.out({'error': 'Tamaño inválido'}, 400)
+            raw = self.rfile.read(length)
+            if not valid_signature(raw, self.headers.get('X-Hub-Signature-256', '')):
+                logging.warning('WhatsApp 403: firma inválida')
+                return self.out({'error': 'Firma inválida'}, 403)
+            stage = 'JSON'
+            body = json.loads(raw)
+            stage = 'evento'
+            for entry in body.get('entry', []):
+                for change in entry.get('changes', []):
+                    value = change.get('value', {})
+                    matches = value.get('metadata', {}).get('phone_number_id') == os.getenv('WA_PHONE_ID')
+                    logging.warning('WhatsApp evento: mensajes=%d estados=%d numero_coincide=%s',
+                                    len(value.get('messages', [])), len(value.get('statuses', [])), matches)
+                    for status in value.get('statuses', []):
+                        if status.get('status') == 'failed':
+                            codes = [e.get('code') for e in status.get('errors', []) if isinstance(e.get('code'), int)]
+                            logging.warning('WhatsApp entrega fallida: codigos_meta=%s', codes)
+            stage = 'procesamiento'
+            webhook(body)
+        except urllib.error.HTTPError as exc:
+            try:
+                code = json.loads(exc.read(16384)).get('error', {}).get('code')
+            except (ValueError, AttributeError):
+                code = None
+            logging.warning('WhatsApp solicitud externa rechazada: HTTP=%d codigo_meta=%s',
+                            exc.code, code if isinstance(code, int) else 'desconocido')
+            return self.out({'error': 'Envío pendiente'}, 503)
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            field = exc.args[0] if isinstance(exc, KeyError) and exc.args else None
+            known = ('id', 'from', 'status', 'timestamp', 'messages', 'WA_TOKEN', 'WA_PHONE_ID', 'WA_GRAPH_VERSION')
+            logging.warning('WhatsApp 400: etapa=%s tipo=%s campo=%s', stage, type(exc).__name__,
+                            field if field in known else '-')
+            return self.out({'error': 'Evento inválido'}, 400)
+        return self.out({'ok': True})
+
     def do_POST(self):
         try:
+            if self.path=='/webhook': return self.receive_whatsapp()
             length=int(self.headers.get('Content-Length','0'))
             if not 0<length<=1000000: raise ValueError('Tamaño inválido')
             raw=self.rfile.read(length)
-            if self.path=='/webhook':
-                if not valid_signature(raw,self.headers.get('X-Hub-Signature-256','')): raise PermissionError('Firma inválida')
-                webhook(json.loads(raw)); return self.out({'ok':True})
             if self.headers.get('Content-Type','').split(';')[0]!='application/json': raise ValueError('Se requiere JSON')
             d=json.loads(raw)
             if not isinstance(d,dict): raise ValueError('Formato inválido')
