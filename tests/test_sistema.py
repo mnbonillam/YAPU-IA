@@ -117,6 +117,23 @@ class Flujo(unittest.TestCase):
         with patch('canal.send',return_value={'messages':[{'id':'out1'}]}) as send:
             canal.webhook(b);canal.webhook(b);self.assertEqual(send.call_count,1)
         with core.db() as c:self.assertEqual(c.execute("SELECT mode FROM users WHERE phone=?",(m['from'],)).fetchone()[0],'live')
+    def test_whatsapp_directory(self):
+        self.call('channel', {'text':'ALTA Achacachi/Quinua/Emergencia'})
+        phone='59100001234'
+        with core.db() as c:
+            canal.respond(c,phone,{'text':{'body':'ALTA Viacha/Papa/Floración'}})
+        self.assertEqual(self.call('admin/whatsapp')[0],403)
+        status,body=self.call('admin/whatsapp',admin=True)
+        self.assertEqual(status,200)
+        records=body['registrations']
+        self.assertEqual(len(records),1)
+        self.assertEqual([records[0][k] for k in ('ending','zone','crop','stage')],
+                         ['1234','Viacha','Papa','Floración'])
+        self.assertNotIn(phone,json.dumps(body))
+        with core.db() as c:
+            canal.respond(c,phone,{'text':{'body':'BAJA'}})
+        self.assertEqual(self.call('admin/whatsapp',admin=True)[1]['registrations'],[])
+
     def test_signature(self):
         data=b'example';sig=hmac.new(b'local-test',data,hashlib.sha256).hexdigest()
         self.assertTrue(canal.valid_signature(data,'sha256='+sig));self.assertFalse(canal.valid_signature(data,'sha256=bad'))

@@ -48,9 +48,20 @@ function alerts(){
 function lab(){
  return title('Exploración guiada','Laboratorio climático')+`<div class="grid"><section class="card"><h2>Ensaya una semana</h2><p>Elige un fenómeno y observa qué regla se activa para tu cultivo. La vista previa utiliza siete días sintéticos.</p><div class="form">${field('labscene','Fenómeno',s.scenes,s.profile.scene)}${field('labcrop','Cultivo',s.crops,s.profile.crop)}${field('labstage','Etapa',s.stages,s.profile.stage)}${btn('simulate','Evaluar escenario →','')}</div></section><section class="card side" id="labresult"><div class="eyebrow">Resultado del ensayo</div><h2 style="margin-top:12px">Datos → regla → acción</h2><p>Evalúa un escenario para ver la evidencia, el umbral y la orientación que recibiría el productor.</p></section></div>`;
 }
+async function refreshRegistrations(){
+ const panel=$('#wa-registrations');
+ if(!panel || panel.dataset.loading)return;
+ panel.dataset.loading='1';
+ try{
+  const {registrations}=await api('admin/whatsapp');
+  panel.innerHTML=registrations.length?registrations.map(x=>`<div class="entry"><strong>WhatsApp · •••• ${h(x.ending)}</strong><p>${h(x.zone)} · ${h(x.crop)} · ${h(x.stage)}</p></div>`).join(''):'<p>Todavía no hay altas confirmadas desde WhatsApp.</p>';
+ }catch(e){panel.textContent='No se pudieron consultar las altas. '+e.message}
+ finally{delete panel.dataset.loading}
+}
+setInterval(()=>{if(page==='Equipo' && !document.hidden)refreshRegistrations()},5000);
 function adminPage(){
  const st=adm.stats;
- return title('Acceso del equipo','Administración',btn('go','Abrir monitor del equipo','', 'Monitor')+' '+btn('logout','Cerrar acceso'))+`<div class="stats">${[['Parcelas',adm.users.length],['Alertas evaluadas',st.responses+' / '+st.alerts],['Útiles según productor',st.responses?Math.round(st.useful/st.responses*100)+' %':'Sin datos']].map(([k,v])=>`<div class="stat"><small>${k}</small><strong>${v}</strong></div>`).join('')}</div><p class="tip">Incluye demostraciones. Coincidencias reportadas: ${st.occurred||0} de ${st.responses} evaluaciones. Estas observaciones no miden la precisión en campo por sí solas.</p><div class="grid"><section class="card"><div class="heading"><h2>Base de conocimiento</h2>${btn('doc','Añadir ficha')}</div>${adm.docs.map(x=>`<div class="entry"><b>${h(x.title)}</b><p>${h(x.body)}</p><small>${h(x.crop)} · ${h(x.source)} &nbsp; </small>${btn('doc','Editar','link',x.id)}</div>`).join('')}</section><div><section class="card"><h2>Productores y planes</h2><p class="tip">Gratuito · Productor Bs 20/mes · Asociación Bs 400/mes por grupo de hasta 50 socios.</p>${adm.users.map(x=>`<form class="entry form plan" data-id="${x.number}"><strong>#${x.number} · ${h(x.name)}</strong><small>${h(x.zone)} · ${h(x.crop)}</small>${field('plan','Plan',Object.keys(s.plans),x.plan)}<button>Aplicar plan</button></form>`).join('')}</section><section class="card stack"><h2>Cola de revisión</h2>${adm.cases.map(x=>`<div class="entry"><small>#${x.id} · ${h(x.name)} · ${x.status}</small><p>${h(x.question)}</p>${btn('case',x.status==='Pendiente'?'Marcar revisado':'Reabrir','ghost',x.id)}</div>`).join('')||'<p>Sin casos pendientes.</p>'}</section></div></div>`;
+ return title('Acceso del equipo','Administración',btn('go','Abrir monitor del equipo','', 'Monitor')+' '+btn('logout','Cerrar acceso'))+`<section class="card"><h2>Productores de WhatsApp</h2><p>Altas confirmadas con su municipio, cultivo y etapa.</p><div id="wa-registrations">Consultando altas…</div></section><div class="stats">${[['Parcelas',adm.users.length],['Alertas evaluadas',st.responses+' / '+st.alerts],['Útiles según productor',st.responses?Math.round(st.useful/st.responses*100)+' %':'Sin datos']].map(([k,v])=>`<div class="stat"><small>${k}</small><strong>${v}</strong></div>`).join('')}</div><p class="tip">Incluye demostraciones. Coincidencias reportadas: ${st.occurred||0} de ${st.responses} evaluaciones. Estas observaciones no miden la precisión en campo por sí solas.</p><div class="grid"><section class="card"><div class="heading"><h2>Base de conocimiento</h2>${btn('doc','Añadir ficha')}</div>${adm.docs.map(x=>`<div class="entry"><b>${h(x.title)}</b><p>${h(x.body)}</p><small>${h(x.crop)} · ${h(x.source)} &nbsp; </small>${btn('doc','Editar','link',x.id)}</div>`).join('')}</section><div><section class="card"><h2>Productores y planes</h2><p class="tip">Gratuito · Productor Bs 20/mes · Asociación Bs 400/mes por grupo de hasta 50 socios.</p>${adm.users.map(x=>`<form class="entry form plan" data-id="${x.number}"><strong>#${x.number} · ${h(x.name)}</strong><small>${h(x.zone)} · ${h(x.crop)}</small>${field('plan','Plan',Object.keys(s.plans),x.plan)}<button>Aplicar plan</button></form>`).join('')}</section><section class="card stack"><h2>Cola de revisión</h2>${adm.cases.map(x=>`<div class="entry"><small>#${x.id} · ${h(x.name)} · ${x.status}</small><p>${h(x.question)}</p>${btn('case',x.status==='Pendiente'?'Marcar revisado':'Reabrir','ghost',x.id)}</div>`).join('')||'<p>Sin casos pendientes.</p>'}</section></div></div>`;
 }
 const money=c=>(c/100).toLocaleString('es-BO',{minimumFractionDigits:2,maximumFractionDigits:2})+' Bs';
 function market(){
@@ -77,7 +88,7 @@ function render(){
  $('#app').innerHTML=page==='Equipo'?adminPage():[home,assistant,alerts,lab,market][tabs.indexOf(page)]();
  const cv=$('.conversation');if(cv)cv.scrollTop=cv.scrollHeight;
 }
-async function team(){adm=await api('admin');page='Equipo';render()}
+async function team(){adm=await api('admin');page='Equipo';render();await refreshRegistrations()}
 function login(){modal(`<img class="logo" src="/marca.png" alt="Yapu IA"><h2>Acceso del equipo</h2><p>Ingresa la clave que muestra el servidor al iniciar.</p><form id="login" class="form"><label>Clave de administración<input name="key" type="password" required></label><button>Entrar al panel</button><div class="error"></div></form>`)}
 async function action(a,v){
  if(a==='go'){page=v;if(v==='Monitor')render();else await refresh();window.scrollTo(0,0)}
@@ -118,4 +129,4 @@ document.addEventListener('submit',async e=>{
  }catch(err){const el=f.querySelector('.error');if(el)el.textContent=err.message;else notify(err.message)}finally{b.disabled=false}
 });
 $('#team').onclick=()=>adminKey?team().catch(login):login();$('.close').onclick=closeModal;
-refresh().catch(e=>{$('#app').textContent='No se pudo abrir el cuaderno. '+e.message});
+refresh().then(()=>{if(location.hash==='#whatsapp')login()}).catch(e=>{$('#app').textContent='No se pudo abrir el cuaderno. '+e.message});

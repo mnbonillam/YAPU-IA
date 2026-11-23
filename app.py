@@ -82,6 +82,15 @@ class Handler(BaseHTTPRequestHandler):
                 with db() as c: return self.out({**ops.board(c,uid,team),'version':rev})
             if path=='/api/state': return self.out(state(self.identity()))
             if path=='/api/health': return self.out({'ok':True})
+            if path=='/api/admin/whatsapp':
+                self.admin()
+                with db() as c:
+                    registrations = rows(c, '''
+                        SELECT rowid AS number, substr(phone,-4) AS ending, zone, crop, stage
+                        FROM users WHERE phone IS NOT NULL AND consent=1 AND mode='live'
+                        ORDER BY last_inbound DESC, rowid DESC
+                    ''')
+                    return self.out({'registrations': registrations})
             if path=='/api/admin':
                 self.admin()
                 with db() as c:
