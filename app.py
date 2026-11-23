@@ -109,8 +109,11 @@ class Handler(BaseHTTPRequestHandler):
                 for change in entry.get('changes', []):
                     value = change.get('value', {})
                     matches = value.get('metadata', {}).get('phone_number_id') == os.getenv('WA_PHONE_ID')
-                    logging.warning('WhatsApp evento: mensajes=%d estados=%d numero_coincide=%s',
-                                    len(value.get('messages', [])), len(value.get('statuses', [])), matches)
+                    counts = (len(value.get('messages', [])), len(value.get('statuses', [])))
+                    if matches:
+                        print('WhatsApp evento: mensajes=%d estados=%d' % counts, flush=True)
+                    else:
+                        logging.warning('WhatsApp evento de otro número: mensajes=%d estados=%d', *counts)
                     for status in value.get('statuses', []):
                         if status.get('status') == 'failed':
                             codes = [e.get('code') for e in status.get('errors', []) if isinstance(e.get('code'), int)]
