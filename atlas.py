@@ -127,7 +127,7 @@ def simulate(c,uid,d):
     if scene=='Aire seco':cur['relative_humidity_2m']=max(1,round(cur['relative_humidity_2m']-65*factor))
     before=risks(w['days'],p['crop'],p['stage'],w['current']);after=risks(days,p['crop'],p['stage'],cur)
     hit=next((r for r in after if r['kind']==scene),None)
-    msg=(f"SIMULACIÓN · {p['name']} · {p['crop']} · {hit['evidence']}. {hit['action']}" if hit else 'Ningún aviso de este fenómeno alcanza el umbral a esta intensidad.')
+    msg=(f"SIMULACIÓN · {scene}\n📍 {p['name']} · {p['crop']}\n\nQué se espera\n{hit['evidence']}\n\nQué puedes hacer\n{hit['action']}" if hit else 'Ningún aviso de este fenómeno alcanza el umbral a esta intensidad.')
     result=dict(scene=scene,factor=factor,before=before,after=after,source=w['source'],valid=w['valid'],baseline=w['days'][0],scenario=days[0],humidity=[w['current']['relative_humidity_2m'],cur['relative_humidity_2m']],notice=msg,level=level(scene) if hit else 'Bajo')
     stamp=now().isoformat(timespec='seconds')
     result['id']=c.execute('INSERT INTO ensayos(owner,parcela,escenario,resultado,fecha) VALUES(?,?,?,?,?)',(uid,p['name'],scene,json.dumps(result,ensure_ascii=False),stamp)).lastrowid

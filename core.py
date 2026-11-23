@@ -100,7 +100,7 @@ def request_json(url,payload,headers):
     req=urllib.request.Request(url,data=json.dumps(payload).encode(),headers={'Content-Type':'application/json',**headers})
     with urllib.request.urlopen(req,timeout=15) as r: return json.load(r)
 
-def ask(c,p,q):
+def ask(c,p,q,whatsapp=False):
     q=clean(q,800); stamp=now().isoformat(timespec="seconds")
     count=c.execute("SELECT COUNT(*) FROM chats WHERE user=? AND substr(stamp,1,10)=?",(p['id'],stamp[:10])).fetchone()[0]
     if count>=PLANS[p['plan']]: raise ValueError("Alcanzaste el límite diario del plan. Se renueva a medianoche de Bolivia.")
@@ -110,6 +110,11 @@ def ask(c,p,q):
     if risky or (not docs and not meteo):
         cid=c.execute('INSERT INTO cases(user,question,stamp) VALUES(?,?,?)',(p['id'],q,stamp)).lastrowid
         msg=f"Faltan datos para orientar esta decisión con confianza. Registré el caso #{cid} para revisión del equipo. Consulta con un técnico de tu zona y lleva fotos, la etapa del cultivo y la fecha de aparición. No se ha contactado automáticamente a un técnico."
+        if whatsapp:
+            msg=(f"📝 *Caso #{cid} registrado para revisión*\n"
+                 "Hace falta más información para orientar esta decisión.\n\n"
+                 "*Qué llevar a un técnico de tu zona*\n• Fotos del cultivo\n• Etapa de crecimiento\n"
+                 "• Fecha en que viste los primeros síntomas\n\nEl contacto con el técnico queda a tu cargo.")
         src='Protocolo de revisión NEXTECH'
     else:
         src=', '.join(dict.fromkeys(d['source']+' / '+d['title'] for d in docs))
@@ -124,21 +129,35 @@ def ask(c,p,q):
                 if which is not None:
                     period=w['days'][which]
                     rr=[r for r in rr if r['date']==period['date']]
-                    parts.append(f"Para el {period['date']}: mínima {period['low']} °C, máxima {period['high']} °C y lluvia {period['rain']} mm.")
+                    if whatsapp:
+                        parts.append(f"🌤️ *Pronóstico del {period['date']}*\n"
+                                     f"• Mínima: {period['low']} °C\n• Máxima: {period['high']} °C\n"
+                                     f"• Lluvia prevista: {period['rain']} mm")
+                    else: parts.append(f"Para el {period['date']}: mínima {period['low']} °C, máxima {period['high']} °C y lluvia {period['rain']} mm.")
                 if target: rr=[r for r in rr if r['kind']==target]
                 if rr:
-                    r=rr[0]; parts.append(f"{r['kind']} el {r['date']}. {r['evidence']}. {r['action']}")
+                    r=rr[0]
+                    if whatsapp:
+                        parts.append(f"⚠️ *{r['kind']} · {r['date']}*\n{r['evidence']}\n\n"
+                                     f"*Qué puedes hacer*\n{r['action']}")
+                    else: parts.append(f"{r['kind']} el {r['date']}. {r['evidence']}. {r['action']}")
                 else: parts.append("Las reglas del piloto no detectan el riesgo consultado en el periodo consultado.")
                 src=(w['source']+' ('+w['stamp']+')'+(' · '+src if src else ''))
             except Exception: parts.append("No se pudo consultar el pronóstico. Reintenta antes de decidir."); src=src or 'Consulta meteorológica sin datos'
-        if docs: parts.append(docs[0]['body'])
-        msg=' '.join(parts)
+        if docs: parts.append(('*Orientación de campo*\n' if whatsapp else '')+docs[0]['body'])
+        msg=('\n\n' if whatsapp else ' ').join(parts)
         if os.getenv('OPENAI_API_KEY') and p['consent']:
             try:
                 result=request_json('https://api.openai.com/v1/chat/completions',dict(model=os.getenv('OPENAI_MODEL','gpt-4o-mini'),messages=[dict(role='system',content='Reformula el material en español sencillo, máximo 65 palabras. Conserva fecha, cifras, incertidumbre y acciones. No agregues diagnósticos, dosis ni información.'),dict(role='user',content=msg)]),{'Authorization':'Bearer '+os.environ['OPENAI_API_KEY']})
                 paraphrase=result['choices'][0]['message']['content'].strip()
-                if paraphrase: msg=paraphrase+'\nDatos y orientación de referencia: '+' '.join(parts)
+                if paraphrase:
+                    msg=('*En breve*\n'+paraphrase+'\n\n'+msg if whatsapp else
+                         paraphrase+'\nDatos y orientación de referencia: '+' '.join(parts))
             except Exception: pass
     a=f"{p['crop']} · {p['stage']} · {p['zone']}\n{msg}\nFuente: {src}. Consulta: {stamp[:10]}. Orientación piloto; las condiciones de tu parcela pueden variar."
+    if whatsapp:
+        a=(f"🌱 *{p['crop']} en {p['zone']}*\nEtapa: {p['stage']}\n\n{msg}\n\n"
+           f"*Fuente:* {src}\nConsulta: {stamp[:10]}\n"
+           "Orientación piloto. Las condiciones de tu parcela pueden variar.")
     c.execute('INSERT INTO chats(user,q,a,stamp) VALUES(?,?,?,?)',(p['id'],q,a,stamp))
     return a

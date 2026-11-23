@@ -16,7 +16,25 @@ En **Mi parcela → Configurar parcela** selecciona **Pronóstico en línea**. E
 
 Crea una plantilla con **siete parámetros de cuerpo**, sin encabezado dinámico. Solicita su aprobación en el idioma configurado. Define `WA_ALERT_TEMPLATE` con su nombre exacto y `WA_LANGUAGE` con el código exacto autorizado. Ejemplo de cuerpo:
 
-> Aviso agrícola Yapu IA. Fenómeno {{1}}. Parcela {{2}}. Fecha prevista {{3}}. Evidencia {{4}}. Orientación {{5}}. Fuente y consulta {{6}}. Para evaluar el aviso, responde ECO {{7}} SI NO, cambiando las dos respuestas según si ocurrió y si fue útil.
+Para mostrar esta distribución en WhatsApp, crea o actualiza el cuerpo en Meta y espera su aprobación. Conserva este orden de parámetros:
+
+```text
+🌦️ *Yapu IA · Aviso de {{1}}*
+
+📍 *Parcela:* {{2}}
+*Fecha prevista:* {{3}}
+
+*Qué se espera*
+{{4}}
+
+*Qué puedes hacer*
+{{5}}
+
+*Fuente:* {{6}}
+
+*Cuéntanos qué pasó*
+Responde ECO {{7}} SI NO. La primera respuesta indica si ocurrió y la segunda si el aviso te sirvió.
+```
 
 Las alertas se revisan al iniciar y cada 10 minutos. Solo los perfiles de WhatsApp con alta reciben envíos reales. El panel muestra la aceptación de la API y evoluciona a enviado, entregado, leído o fallido cuando llegan los eventos firmados del proveedor. Los acuses de una alerta se registran independientemente de las confirmaciones de lectura. Si la conexión falla justo después de que el proveedor acepte un envío puede producirse un duplicado al reintentar. No hay mediciones de latencia ni disponibilidad de producción.
 

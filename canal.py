@@ -28,7 +28,20 @@ def transcribe(media):
     payload=(f'--{boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="nota.ogg"\r\nContent-Type: audio/ogg\r\n\r\n'.encode()+audio+f'\r\n--{boundary}--\r\n'.encode())
     req=urllib.request.Request('https://api.openai.com/v1/audio/transcriptions',data=payload,headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY'],'Content-Type':'multipart/form-data; boundary='+boundary})
     with urllib.request.urlopen(req,timeout=25) as r: return json.load(r)['text']
-HELP="Para recibir orientación y alertas, envía ALTA Viacha/Papa/Floración (separa con /). Zonas: Viacha, Achacachi, Patacamaya. Cultivos: Papa, Quinua. Etapas: Emergencia, Desarrollo, Floración, Maduración. Al enviar ALTA aceptas guardar teléfono, parcela y consultas, y procesar voz con el proveedor de IA si está habilitado. BAJA elimina tu perfil."
+HELP = (
+    "🌱 *¡Bienvenido a Yapu IA!*\n"
+    "¿Cómo estará el tiempo en tu parcela? Registra tu cultivo para consultar el pronóstico y recibir avisos.\n\n"
+    "*Para empezar*\nEnvía tu municipio, cultivo y etapa en este orden. Puedes copiar este ejemplo:\n"
+    "ALTA Viacha/Papa/Floración\n\n"
+    "*Opciones de registro*\n"
+    f"• Municipios: {', '.join(ZONES)}.\n"
+    f"• Cultivos: {', '.join(CROPS)}.\n"
+    f"• Etapas: {', '.join(STAGES)}.\n\n"
+    "*Tus datos*\nAl enviar ALTA aceptas guardar tu teléfono, parcela y consultas. "
+    "Si usas voz y el servicio está habilitado, el proveedor de IA procesará el audio. "
+    "Escribe BAJA para eliminar tu perfil."
+)
+
 def match(s,items): return next((v for v in items if norm(s.strip())==norm(v)),None)
 def respond(c,phone,m,web_uid=None):
     p=c.execute('SELECT * FROM users WHERE phone=?',(phone,)).fetchone()
@@ -50,39 +63,49 @@ def respond(c,phone,m,web_uid=None):
         if not all((z,cr,st)): return HELP
         uid=web_uid or (p['id'] if p else create_user(c,phone))
         update_profile(c,uid,dict(name="Parcela WhatsApp",zone=z,crop=cr,stage=st,mode="demo" if web_uid else "live",scene="Helada" if web_uid else "Estable",consent=True))
-        return f"Parcela registrada: {cr}, {st}, {z}. Pregunta por heladas o el pronóstico. Escribe BAJA para salir."
+        return (f"✅ *Parcela registrada*\n\n📍 *Municipio:* {z}\n"
+                f"🌱 *Cultivo:* {cr}\n*Etapa:* {st}\n\n"
+                "*Tu primera consulta*\n¿Hay riesgo de helada mañana?\n\n"
+                "También puedes compartir la ubicación de tu terreno para ajustar el pronóstico. "
+                "Escribe BAJA para salir.")
     if not p: return HELP
+    if norm(q).strip(" ¡!¿?.") in ("hola", "menu", "ayuda", "buenas", "buenos dias"):
+        return (f"🌱 *Tu parcela en {p['zone']}*\n{p['crop']} · {p['stage']}\n\n"
+                "*¿Qué quieres consultar?*\n"
+                "• ¿Qué temperatura se espera hoy?\n• ¿Hay riesgo de helada mañana?\n"
+                "• ¿Cómo reviso la humedad del suelo?\n\n"
+                "Escribe tu pregunta o comparte la ubicación del terreno.")
     if m.get('type')=='location':
         point=m['location']
         update_profile(c,p['id'],{**dict(p),'consent':True,'lat':point['latitude'],'lon':point['longitude']})
-        return 'Ubicación guardada. Los próximos pronósticos usarán las coordenadas compartidas.'
+        return '📍 *Ubicación guardada*\n\nLos próximos pronósticos usarán las coordenadas compartidas.'
     if q.upper().startswith('VINCULAR ') and not web_uid:
         key=hashlib.sha256(q.split(None,1)[1].strip().upper().encode()).hexdigest()
         row=c.execute('SELECT u.name FROM enlaces e JOIN users u ON u.id=e.parcela WHERE clave=? AND vence>? AND u.consent=1',(key,now().isoformat())).fetchone()
-        if not row:return 'Código vencido o desconocido.'
+        if not row:return '🔗 *Código vencido o desconocido*\n\nAbre Alertas en el panel y genera un código nuevo.'
         c.execute('UPDATE enlaces SET receptor=?,clave=NULL,vence=NULL WHERE clave=?',(p['id'],key))
-        return 'Recibirás avisos de '+row[0]+'. BAJA cancela la suscripción.'
+        return '🔔 *Parcela vinculada*\n\nRecibirás avisos de '+row[0]+'.\n\nEscribe BAJA para cancelar la suscripción.'
     if q.upper().startswith('ACUSE '):
         code=q[6:].strip()
-        if not code.isdigit(): return 'Envía ACUSE seguido del número de aviso.'
+        if not code.isdigit(): return '*Confirmar recepción*\nEnvía ACUSE seguido del número de tu aviso.\n\nEjemplo para el aviso 12:\nACUSE 12'
         changed=c.execute("UPDATE alerts SET ack=COALESCE(ack,?) WHERE id=? AND (user=? OR user IN (SELECT parcela FROM enlaces WHERE receptor=?)) AND active=1 AND day>=?",(now().isoformat(timespec='seconds'),int(code),p['id'],p['id'],str(now().date())))
-        return 'Acuse registrado.' if changed.rowcount else 'Aviso desconocido o finalizado.'
+        return '✅ *Acuse registrado*\nEl aviso quedó marcado como recibido.' if changed.rowcount else '*Aviso desconocido o finalizado*\nRevisa el número que figura en el aviso.'
     if q.upper()=='BAJA':
         if web_uid:
             c.execute('DELETE FROM users WHERE id=?',(web_uid,)); return 'Perfil de demostración eliminado.'
         c.execute('DELETE FROM users WHERE phone=?',(phone,)); c.execute('DELETE FROM inbox WHERE phone=?',(phone,))
-        return 'Tu perfil fue eliminado. Ya no recibirás alertas.'
+        return '*Perfil eliminado*\nTu teléfono ha dejado de recibir alertas de esta parcela.'
     if q.upper().startswith('ECO '):
         parts=q.upper().split()
-        if len(parts)!=4 or not parts[1].isdigit() or any(v not in ('SI','NO') for v in parts[2:]): return 'Usa ECO número SI/NO SI/NO (ocurrió, fue útil).'
+        if len(parts)!=4 or not parts[1].isdigit() or any(v not in ('SI','NO') for v in parts[2:]): return '*Cómo evaluar un aviso*\nEnvía ECO, el número del aviso y dos respuestas.\n\n• Primera: ¿ocurrió? SI o NO.\n• Segunda: ¿te sirvió? SI o NO.\n\nEjemplo para el aviso 12:\nECO 12 SI NO'
         res=c.execute('UPDATE alerts SET occurred=?,useful=? WHERE id=? AND (user=? OR user IN (SELECT parcela FROM enlaces WHERE receptor=?))',(parts[2]=='SI',parts[3]=='SI',parts[1],p['id'],p['id']))
-        return 'Observación guardada.' if res.rowcount else 'Alerta desconocida.'
+        return '✅ *Observación guardada*\nGracias por contarnos qué pasó en tu parcela.' if res.rowcount else 'Alerta desconocida.'
     if m.get('type')=='audio':
         try: q=transcribe(m['audio']['id'])
         except Exception: q=None
-        if not q: return 'No pude transcribir esa nota. Envía tu consulta por texto.'
+        if not q: return '🎙️ *No pude leer la nota de voz*\nEnvíame la pregunta por escrito.'
     if not q: return 'Envía tu pregunta por texto o nota de voz.'
-    try: return ask(c,dict(p),q)
+    try: return ask(c,dict(p),q,whatsapp=True)
     except ValueError as e: return str(e)
 
 def webhook(body):

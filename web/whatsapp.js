@@ -3,7 +3,8 @@ const $=q=>document.querySelector(q);
 let current=null,version='',writing=false,polling=false;
 const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(path,body){const r=await fetch('/api/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const j=await r.json();if(!r.ok)throw Error(j.error||'Conexión interrumpida');return j}
-function bubble(text,date,out=false){return '<div class="bubble '+(out?'mine':'')+'">'+escapeHtml(text)+'<small>'+escapeHtml(date.slice(11,16))+'</small></div>'}
+function formatted(text){return escapeHtml(text).replace(/\*([^*\n]+)\*/g,'<strong>$1</strong>')}
+function bubble(text,date,out=false){return '<div class="bubble '+(out?'mine':'')+'">'+(out?escapeHtml(text):formatted(text))+'<small>'+escapeHtml(date.slice(11,16))+'</small></div>'}
 function render(d){
  const thread=$('#thread'),bottom=thread.scrollHeight-thread.scrollTop-thread.clientHeight<60;
  let items=d.mensajes.map(m=>({stamp:m.fecha,html:bubble(m.pregunta,m.fecha,true)+bubble(m.respuesta,m.fecha)}));
