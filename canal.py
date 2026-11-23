@@ -8,6 +8,7 @@ import urllib.request
 import uuid
 from core import *
 import operaciones as ops
+import opciones_wa
 
 gate=threading.Lock()
 schedule_wake=threading.Event()
@@ -127,13 +128,19 @@ def webhook(body):
                         c.execute('BEGIN IMMEDIATE')
                         row=c.execute('SELECT * FROM inbox WHERE id=?',(mid,)).fetchone()
                         if row and row['done']: continue
-                        reply=row['reply'] if row else respond(c,phone,m)
+                        if row:
+                            saved=row['reply']
+                            payload=json.loads(saved[4:]) if saved.startswith('WA1:') else opciones_wa.texto(saved)
+                        else:
+                            payload=opciones_wa.respuesta(c,phone,m,respond)
+                        reply=(payload['interactive']['body']['text'] if payload['type']=='interactive'
+                               else payload['text']['body'])
                         who=c.execute('SELECT id FROM users WHERE phone=?',(phone,)).fetchone()
                         if who and m.get('timestamp'):
                             c.execute('UPDATE users SET last_inbound=max(coalesce(last_inbound,0),?) WHERE id=?',(int(m['timestamp']),who['id']))
-                        if who: ops.log_message(c,who['id'],'WhatsApp','Productor',m.get('text',{}).get('body','['+m.get('type','mensaje')+']'),mid)
-                        if not row: c.execute('INSERT INTO inbox VALUES(?,?,?,0)',(mid,phone,reply))
-                    sent=send(phone,dict(type='text',text=dict(body=reply[:4000])))
+                        if who: ops.log_message(c,who['id'],'WhatsApp','Productor',opciones_wa.seleccion(m).get('title') or m.get('text',{}).get('body','['+m.get('type','mensaje')+']'),mid)
+                        if not row: c.execute('INSERT INTO inbox VALUES(?,?,?,0)',(mid,phone,'WA1:'+json.dumps(payload,ensure_ascii=False)))
+                    sent=send(phone,payload)
                     with db() as c:
                         if who:
                             ext=sent['messages'][0]['id']
