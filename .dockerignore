@@ -1,0 +1,11 @@
+.env
+datos/
+respaldos/
+__pycache__/
+*.pyc
+.env.*
+!.env.example
+*.sqlite*
+*.db
+*.db-wal
+*.db-shm
